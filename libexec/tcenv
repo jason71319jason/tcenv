@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -e
+
+if [ "$1" = "--debug" ]; then
+	export TCENV_DEBUG=1
+	shift
+fi
+
+if [ -n "$TCENV_DEBUG" ]; then
+	export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+	set -x
+fi
+
+abort() {
+ { if [ "$#" -eq 0 ]; then cat -
+   else echo "tcenv: $*"
+   fi
+ } >&2
+ exit 1
+}
+
+if enable -f "${BASH_SOURCE%/*}"/../libexec/tcenv-realpath.dylib realpath 2>/dev/null; then
+  abs_dirname() {
+    local path
+    path="$(realpath "$1")"
+    echo "${path%/*}"
+  }
+else
+  [ -z "$TCENV_NATIVE_EXT" ] || abort "failed to load \`realpath' builtin"
+
+  READLINK=$(type -P readlink)
+  [ -n "$READLINK" ] || abort "cannot find readlink - are you missing GNU coreutils?"
+
+  resolve_link() {
+    $READLINK "$1"
+  }
+
+  abs_dirname() {
+    local path="$1"
+
+    # Use a subshell to avoid changing the current path
+    (
+    while [ -n "$path" ]; do
+      cd_path="${path%/*}"
+      if [ "$cd_path" != "$path" ]; then
+        cd "$cd_path"
+      fi
+      name="${path##*/}"
+      path="$(resolve_link "$name" || true)"
+    done
+
+    echo "$PWD"
+    )
+  }
+fi
